@@ -37,6 +37,7 @@ RDS_HOST=""
 RDS_MASTER_USER="admin"
 RDS_MASTER_PASS="${RDS_MASTER_PASS:-}"
 DB_PASS=""
+TABLE_PREFIX="wp_"
 WEBAPPS_DIR="/home/ubuntu/webapps"
 RDS_CA_PATH="/etc/ssl/certs/rds-global-bundle.pem"
 SKIP_DB=0
@@ -82,6 +83,7 @@ RDS / database (db name == db user, both equal to --site):
   --rds-master-user=USER   RDS admin user (default: admin)
   --rds-master-pass=PASS   RDS admin pass — or set env RDS_MASTER_PASS
   --db-pass=PASS           App user password (auto-generated if omitted)
+  --table-prefix=PREFIX    WordPress table prefix (default: wp_)
   --skip-db                Skip DB creation even if --rds-host is given
   --local-db               Use local MySQL without SSL (dev/test only — not for RDS)
 
@@ -129,6 +131,7 @@ parse_args() {
             --rds-master-user=*) RDS_MASTER_USER="${arg#*=}" ;;
             --rds-master-pass=*) RDS_MASTER_PASS="${arg#*=}" ;;
             --db-pass=*)         DB_PASS="${arg#*=}" ;;
+            --table-prefix=*)    TABLE_PREFIX="${arg#*=}" ;;
             --skip-db)           SKIP_DB=1 ;;
             --local-db)          LOCAL_DB=1 ;;
             --skip-clone)        SKIP_CLONE=1 ;;
@@ -361,6 +364,7 @@ PHP
         --dbuser="$SITE" \
         --dbpass="$DB_PASS" \
         --dbhost="$RDS_HOST" \
+        --dbprefix="$TABLE_PREFIX" \
         --dbcharset=utf8mb4 \
         --dbcollate=utf8mb4_unicode_ci \
         --extra-php < "$extra"
