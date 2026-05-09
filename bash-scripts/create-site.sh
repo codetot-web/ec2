@@ -37,10 +37,12 @@ RDS_HOST=""
 RDS_MASTER_USER="admin"
 RDS_MASTER_PASS="${RDS_MASTER_PASS:-}"
 DB_PASS=""
+TABLE_PREFIX="wp_"
 WEBAPPS_DIR="/home/ubuntu/webapps"
 RDS_CA_PATH="/etc/ssl/certs/rds-global-bundle.pem"
 SKIP_DB=0
 SKIP_CLONE=0
+LOCAL_DB=0   # skip RDS SSL enforcement (for local MySQL dev/test hosts)
 FORCE=0
 
 # ---------- Helpers ----------
@@ -81,7 +83,9 @@ RDS / database (db name == db user, both equal to --site):
   --rds-master-user=USER   RDS admin user (default: admin)
   --rds-master-pass=PASS   RDS admin pass — or set env RDS_MASTER_PASS
   --db-pass=PASS           App user password (auto-generated if omitted)
+  --table-prefix=PREFIX    WordPress table prefix (default: wp_)
   --skip-db                Skip DB creation even if --rds-host is given
+  --local-db               Use local MySQL without SSL (dev/test only — not for RDS)
 
 Other:
   --force                  Overwrite existing files (NOT existing databases)
@@ -127,7 +131,9 @@ parse_args() {
             --rds-master-user=*) RDS_MASTER_USER="${arg#*=}" ;;
             --rds-master-pass=*) RDS_MASTER_PASS="${arg#*=}" ;;
             --db-pass=*)         DB_PASS="${arg#*=}" ;;
+            --table-prefix=*)    TABLE_PREFIX="${arg#*=}" ;;
             --skip-db)           SKIP_DB=1 ;;
+            --local-db)          LOCAL_DB=1 ;;
             --skip-clone)        SKIP_CLONE=1 ;;
             --force)             FORCE=1 ;;
             --help|-h)           usage; exit 0 ;;
@@ -210,6 +216,31 @@ step_clone_repo() {
     ok "Cloned to $PUBLIC_DIR"
 }
 
+step_htaccess() {
+    local htaccess="$PUBLIC_DIR/.htaccess"
+
+    if [ -f "$htaccess" ] && [ "$FORCE" -ne 1 ]; then
+        ok ".htaccess exists — keeping (use --force to overwrite)"
+        return
+    fi
+
+    log "Writing default WordPress .htaccess"
+    sudo -u ubuntu tee "$htaccess" > /dev/null <<'HTACCESS'
+# BEGIN WordPress
+<IfModule mod_rewrite.c>
+RewriteEngine On
+RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+RewriteBase /
+RewriteRule ^index\.php$ - [L]
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule . /index.php [L]
+</IfModule>
+# END WordPress
+HTACCESS
+    ok ".htaccess written (ubuntu:www-data 0664)"
+}
+
 step_create_database() {
     if [ -z "$RDS_HOST" ]; then
         warn "No --rds-host, skipping DB setup"
@@ -226,16 +257,36 @@ step_create_database() {
     local cnf
     cnf=$(mktemp)
     chmod 600 "$cnf"
-    cat > "$cnf" <<EOF
+
+    if [ "$LOCAL_DB" -eq 1 ]; then
+        # Local MySQL (dev/test): no SSL enforcement
+        cat > "$cnf" <<EOF
+[client]
+host=$RDS_HOST
+user=$RDS_MASTER_USER
+password=$RDS_MASTER_PASS
+EOF
+        mysql --defaults-extra-file="$cnf" <<SQL
+CREATE DATABASE IF NOT EXISTS \`$SITE\`
+    CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+CREATE USER IF NOT EXISTS '$SITE'@'%' IDENTIFIED BY '$DB_PASS';
+ALTER USER '$SITE'@'%' IDENTIFIED BY '$DB_PASS';
+GRANT ALL PRIVILEGES ON \`$SITE\`.* TO '$SITE'@'%';
+FLUSH PRIVILEGES;
+SQL
+        rm -f "$cnf"
+        warn "Local DB mode — REQUIRE SSL skipped (not for production RDS)"
+        ok "Database '$SITE' + user '$SITE' ready"
+    else
+        # RDS: enforce SSL on user + connection
+        cat > "$cnf" <<EOF
 [client]
 host=$RDS_HOST
 user=$RDS_MASTER_USER
 password=$RDS_MASTER_PASS
 ssl-ca=$RDS_CA_PATH
 EOF
-
-    # Idempotent: IF NOT EXISTS + ALTER USER for password sync
-    mysql --defaults-extra-file="$cnf" <<SQL
+        mysql --defaults-extra-file="$cnf" <<SQL
 CREATE DATABASE IF NOT EXISTS \`$SITE\`
     CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 CREATE USER IF NOT EXISTS '$SITE'@'%' IDENTIFIED BY '$DB_PASS' REQUIRE SSL;
@@ -243,9 +294,9 @@ ALTER USER '$SITE'@'%' IDENTIFIED BY '$DB_PASS' REQUIRE SSL;
 GRANT ALL PRIVILEGES ON \`$SITE\`.* TO '$SITE'@'%';
 FLUSH PRIVILEGES;
 SQL
-
-    rm -f "$cnf"
-    ok "Database '$SITE' + user '$SITE' ready (REQUIRE SSL)"
+        rm -f "$cnf"
+        ok "Database '$SITE' + user '$SITE' ready (REQUIRE SSL)"
+    fi
 
     # Verify the app user can actually connect
     log "Verifying app user connection"
@@ -256,13 +307,13 @@ SQL
 host=$RDS_HOST
 user=$SITE
 password=$DB_PASS
-ssl-ca=$RDS_CA_PATH
 EOF
+    [ "$LOCAL_DB" -eq 0 ] && echo "ssl-ca=$RDS_CA_PATH" >> "$cnf"
     if mysql --defaults-extra-file="$cnf" -e "SELECT 1;" "$SITE" >/dev/null 2>&1; then
         ok "App user '$SITE' can connect to '$SITE'"
     else
         rm -f "$cnf"
-        err "App user '$SITE' cannot connect — check RDS security group + parameter group (require_secure_transport)"
+        err "App user '$SITE' cannot connect — check host/firewall/SSL config"
     fi
     rm -f "$cnf"
 }
@@ -319,7 +370,7 @@ if (!empty(\$_SERVER['HTTP_CF_CONNECTING_IP'])) {
 }
 
 // === RDS SSL connection (CA bundle: /etc/ssl/certs/rds-global-bundle.pem) ===
-define('MYSQL_CLIENT_FLAGS', MYSQLI_CLIENT_SSL);
+$([ "$LOCAL_DB" -eq 0 ] && echo "define('MYSQL_CLIENT_FLAGS', MYSQLI_CLIENT_SSL);" || echo "// MYSQL_CLIENT_FLAGS omitted — local DB mode")
 
 // === Site URLs ===
 define('WP_HOME',    'https://${DOMAIN}');
@@ -338,6 +389,7 @@ PHP
         --dbuser="$SITE" \
         --dbpass="$DB_PASS" \
         --dbhost="$RDS_HOST" \
+        --dbprefix="$TABLE_PREFIX" \
         --dbcharset=utf8mb4 \
         --dbcollate=utf8mb4_unicode_ci \
         --extra-php < "$extra"
@@ -477,7 +529,11 @@ step_summary() {
         echo "  DB name:        $SITE   (== DB user)"
         echo "  DB user:        $SITE"
         echo "  DB pass:        (saved to $SITE_ROOT/.credentials)"
-        echo "  SSL:            REQUIRE SSL on user; MYSQLI_CLIENT_SSL in wp-config"
+        if [ "$LOCAL_DB" -eq 1 ]; then
+            echo "  SSL:            skipped (--local-db mode — not for production)"
+        else
+            echo "  SSL:            REQUIRE SSL on user; MYSQLI_CLIENT_SSL in wp-config"
+        fi
     fi
     echo ""
     echo "Next steps:"
@@ -506,6 +562,7 @@ parse_args "$@"
 preflight
 step_create_dirs
 step_clone_repo
+step_htaccess
 step_create_database
 step_credentials_file
 step_wp_config
