@@ -1,0 +1,16 @@
+# Secrets — NEVER commit
+.env
+.env.*
+!.env.example
+
+# macOS
+.DS_Store
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*~
+
+# Local-only Claude Code state
+.claude/settings.local.json
