@@ -157,17 +157,22 @@ step_configure_apache() {
 
 step_install_wp_cli() {
     log "Installing WP-CLI"
-    if [ -x /usr/local/bin/wp ]; then
-        warn "WP-CLI already present — refreshing"
+    if [ -x /usr/local/bin/wp ] \
+       && /usr/local/bin/wp --info --allow-root 2>/dev/null | grep -q '^WP-CLI version'; then
+        ok "WP-CLI: $(/usr/local/bin/wp --info --allow-root 2>/dev/null | grep '^WP-CLI version') (skipping download)"
+        return
     fi
     curl -fsSL "$WP_CLI_URL" -o /usr/local/bin/wp
     chmod +x /usr/local/bin/wp
-    # Sanity check, hide warnings about running as root
     ok "WP-CLI: $(/usr/local/bin/wp --info --allow-root 2>/dev/null | grep '^WP-CLI version' || echo installed)"
 }
 
 step_rds_ca_bundle() {
     log "Installing AWS RDS global CA bundle"
+    if [ -s "$RDS_CA_PATH" ] && openssl x509 -in "$RDS_CA_PATH" -noout >/dev/null 2>&1; then
+        ok "RDS CA bundle: $RDS_CA_PATH (already present, skipping download)"
+        return
+    fi
     wget -q "$RDS_CA_URL" -O "$RDS_CA_PATH"
     chmod 644 "$RDS_CA_PATH"
     chown root:root "$RDS_CA_PATH"
@@ -212,8 +217,11 @@ step_webapps_dir() {
 
 step_swap() {
     log "Configuring swap (${SWAP_SIZE_MB} MB)"
-    if swapon --show 2>/dev/null | grep -q '/swapfile'; then
-        ok "Swap already active"
+    # Detect ANY active swap (swapfile, partition, or vendor-provisioned device)
+    # so vendor-shipped swap (e.g. /dev/vdb on some VPS images) doesn't lead to
+    # a redundant /swapfile being added on top.
+    if [ -n "$(swapon --show --noheadings 2>/dev/null)" ]; then
+        ok "Swap already active: $(swapon --show --noheadings 2>/dev/null | awk '{print $1}' | paste -sd, -)"
     else
         fallocate -l "${SWAP_SIZE_MB}M" /swapfile
         chmod 600 /swapfile
@@ -279,9 +287,20 @@ step_summary() {
     echo "  Redis:        $(redis-cli ping 2>/dev/null)"
     echo "  Webroot:      $WEBAPPS_DIR  ($(stat -c '%U:%G %a' $WEBAPPS_DIR))"
     echo "  RDS CA:       $RDS_CA_PATH"
-    echo "  Swap:         $(swapon --show --noheadings 2>/dev/null | head -1 || echo none)"
+    local swap_summary
+    swap_summary=$(swapon --show --noheadings 2>/dev/null | awk '{print $1"("$3")"}' | paste -sd, -)
+    echo "  Swap:         ${swap_summary:-none}"
     echo "  UFW:          $(ufw status | head -1 | sed 's/Status: //')"
     echo "  fail2ban:     $(systemctl is-active fail2ban)"
+    if [ -f /var/run/reboot-required ]; then
+        echo ""
+        warn "REBOOT REQUIRED — apt installed a new kernel or core library."
+        if [ -s /var/run/reboot-required.pkgs ]; then
+            warn "  Pending packages:"
+            sed 's/^/      /' /var/run/reboot-required.pkgs
+        fi
+        warn "  Reboot when convenient: sudo reboot"
+    fi
     echo ""
     echo "Next steps for each site (e.g. masanconsumer):"
     echo "  1. mkdir -p $WEBAPPS_DIR/<site>/{public,logs,backups,tmp}"
