@@ -1,6 +1,7 @@
 # Secrets — NEVER commit
 .env
 .env.*
+!.env.sample
 !.env.example
 
 # macOS
