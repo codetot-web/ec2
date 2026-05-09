@@ -216,6 +216,31 @@ step_clone_repo() {
     ok "Cloned to $PUBLIC_DIR"
 }
 
+step_htaccess() {
+    local htaccess="$PUBLIC_DIR/.htaccess"
+
+    if [ -f "$htaccess" ] && [ "$FORCE" -ne 1 ]; then
+        ok ".htaccess exists — keeping (use --force to overwrite)"
+        return
+    fi
+
+    log "Writing default WordPress .htaccess"
+    sudo -u ubuntu tee "$htaccess" > /dev/null <<'HTACCESS'
+# BEGIN WordPress
+<IfModule mod_rewrite.c>
+RewriteEngine On
+RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+RewriteBase /
+RewriteRule ^index\.php$ - [L]
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule . /index.php [L]
+</IfModule>
+# END WordPress
+HTACCESS
+    ok ".htaccess written (ubuntu:www-data 0664)"
+}
+
 step_create_database() {
     if [ -z "$RDS_HOST" ]; then
         warn "No --rds-host, skipping DB setup"
@@ -537,6 +562,7 @@ parse_args "$@"
 preflight
 step_create_dirs
 step_clone_repo
+step_htaccess
 step_create_database
 step_credentials_file
 step_wp_config
