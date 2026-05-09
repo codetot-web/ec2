@@ -20,32 +20,32 @@ This script handles DB + uploads. Code is not backed up here — it lives in Git
 
 ## Phase A — S3 bucket setup (one-time)
 
-Create one bucket per environment, e.g. `codetot-backups-prod`. Region should match the EC2 region for fast intra-region transfer (free vs. cross-region egress).
+Create one bucket per environment, e.g. `your-backups-prod`. Region should match the EC2 region for fast intra-region transfer (free vs. cross-region egress).
 
 ### A.1 Create bucket with versioning + encryption
 
 ```bash
 # From any machine with AWS CLI configured (your laptop, Cloud Shell, etc.)
 aws s3api create-bucket \
-    --bucket codetot-backups-prod \
+    --bucket your-backups-prod \
     --region ap-southeast-1 \
     --create-bucket-configuration LocationConstraint=ap-southeast-1
 
 # Versioning ON — protects against ransomware + accidental deletion
 aws s3api put-bucket-versioning \
-    --bucket codetot-backups-prod \
+    --bucket your-backups-prod \
     --versioning-configuration Status=Enabled
 
 # Default encryption (SSE-S3, free)
 aws s3api put-bucket-encryption \
-    --bucket codetot-backups-prod \
+    --bucket your-backups-prod \
     --server-side-encryption-configuration '{
         "Rules": [{"ApplyServerSideEncryptionByDefault": {"SSEAlgorithm": "AES256"}}]
     }'
 
 # Block all public access — these are private backups
 aws s3api put-public-access-block \
-    --bucket codetot-backups-prod \
+    --bucket your-backups-prod \
     --public-access-block-configuration \
         "BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true"
 ```
@@ -81,7 +81,7 @@ Apply:
 
 ```bash
 aws s3api put-bucket-lifecycle-configuration \
-    --bucket codetot-backups-prod \
+    --bucket your-backups-prod \
     --lifecycle-configuration file://lifecycle.json
 ```
 
@@ -115,7 +115,7 @@ Save as `s3-backup-policy.json` and replace the bucket name:
         "s3:ListBucket",
         "s3:GetBucketLocation"
       ],
-      "Resource": "arn:aws:s3:::codetot-backups-prod"
+      "Resource": "arn:aws:s3:::your-backups-prod"
     },
     {
       "Sid": "ReadWriteObjects",
@@ -127,7 +127,7 @@ Save as `s3-backup-policy.json` and replace the bucket name:
         "s3:GetObjectVersion",
         "s3:ListBucketVersions"
       ],
-      "Resource": "arn:aws:s3:::codetot-backups-prod/*"
+      "Resource": "arn:aws:s3:::your-backups-prod/*"
     }
   ]
 }
@@ -138,13 +138,13 @@ Save as `s3-backup-policy.json` and replace the bucket name:
 ```bash
 # Create the policy
 aws iam create-policy \
-    --policy-name CodetotBackupS3Access \
+    --policy-name WPBackupS3Access \
     --policy-document file://s3-backup-policy.json
 
 # Attach to the EC2 instance role (replace ROLE_NAME with your actual role)
 aws iam attach-role-policy \
     --role-name <YOUR_EC2_INSTANCE_ROLE_NAME> \
-    --policy-arn arn:aws:iam::<ACCOUNT_ID>:policy/CodetotBackupS3Access
+    --policy-arn arn:aws:iam::<ACCOUNT_ID>:policy/WPBackupS3Access
 ```
 
 If the EC2 instance has no IAM role yet, create one and associate it with the instance — that's a separate AWS Console / CLI workflow.
@@ -156,11 +156,11 @@ If the EC2 instance has no IAM role yet, create one and associate it with the in
 aws sts get-caller-identity
 # Should return the role ARN, not an IAM user ARN.
 
-aws s3 ls s3://codetot-backups-prod/
+aws s3 ls s3://your-backups-prod/
 # Should succeed (empty list is fine).
 
-echo "test" | aws s3 cp - s3://codetot-backups-prod/connectivity-test.txt
-aws s3 rm s3://codetot-backups-prod/connectivity-test.txt
+echo "test" | aws s3 cp - s3://your-backups-prod/connectivity-test.txt
+aws s3 rm s3://your-backups-prod/connectivity-test.txt
 # Both must succeed before proceeding.
 ```
 
@@ -200,7 +200,7 @@ sudo -u ubuntu aws configure set region ap-southeast-1
 
 ```bash
 # On EC2 as ubuntu — host the script in your repo first, then:
-sudo wget -q https://raw.githubusercontent.com/codetot-web/runcloud-bash-scripts/main/backup-site.sh \
+sudo wget -q https://raw.githubusercontent.com/your-org/runcloud-bash-scripts/main/backup-site.sh \
     -O /usr/local/bin/backup-site
 sudo chmod +x /usr/local/bin/backup-site
 
@@ -211,7 +211,7 @@ backup-site --help
 ### Test run (manual, before scheduling)
 
 ```bash
-backup-site --site=masanconsumer --bucket=codetot-backups-prod
+backup-site --site=acmeshop --bucket=your-backups-prod
 ```
 
 You should see timestamped log output ending with the latest 3 DB backups in S3. If anything fails, the script aborts loudly — common failure modes:
@@ -237,16 +237,16 @@ Add these lines (all times are local — set at `bootstrap` time via `timedatect
 ```cron
 # === WordPress backups ===
 # Email cron failures (set MAILTO if you have an MTA configured, e.g. via SES)
-# MAILTO=ops@codetot.com
+# MAILTO=ops@example.com
 
 # Log directory (one log per site, rotated by logrotate — see E.3)
 BACKUP_LOG_DIR=/home/ubuntu/webapps
 
-# masanconsumer — Sunday 02:00 local time (= staggered, low traffic)
-0 2 * * 0 /usr/local/bin/backup-site --site=masanconsumer --bucket=codetot-backups-prod >> $BACKUP_LOG_DIR/masanconsumer/logs/backup.log 2>&1
+# acmeshop — Sunday 02:00 local time (= staggered, low traffic)
+0 2 * * 0 /usr/local/bin/backup-site --site=acmeshop --bucket=your-backups-prod >> $BACKUP_LOG_DIR/acmeshop/logs/backup.log 2>&1
 
 # Add more sites here, staggered 30+ minutes apart so they don't compete for resources:
-# 30 2 * * 0 /usr/local/bin/backup-site --site=othersite --bucket=codetot-backups-prod >> $BACKUP_LOG_DIR/othersite/logs/backup.log 2>&1
+# 30 2 * * 0 /usr/local/bin/backup-site --site=othersite --bucket=your-backups-prod >> $BACKUP_LOG_DIR/othersite/logs/backup.log 2>&1
 ```
 
 ### E.2 Verify the cron entry
@@ -280,7 +280,7 @@ Weekly is the minimum. For production, add a daily DB-only backup — uploads ca
 
 ```cron
 # Daily DB-only backup at 03:00 (skip uploads)
-0 3 * * 1-6 /usr/local/bin/backup-site --site=masanconsumer --bucket=codetot-backups-prod --skip-uploads >> $BACKUP_LOG_DIR/masanconsumer/logs/backup.log 2>&1
+0 3 * * 1-6 /usr/local/bin/backup-site --site=acmeshop --bucket=your-backups-prod --skip-uploads >> $BACKUP_LOG_DIR/acmeshop/logs/backup.log 2>&1
 ```
 
 `1-6` = Mon–Sat, so Sunday's full weekly backup isn't doubled.
@@ -293,19 +293,19 @@ Weekly is the minimum. For production, add a daily DB-only backup — uploads ca
 
 ```bash
 # Latest DB backup
-aws s3 ls s3://codetot-backups-prod/backups/masanconsumer/db/ | sort | tail -5
+aws s3 ls s3://your-backups-prod/backups/acmeshop/db/ | sort | tail -5
 
 # Uploads sync — compare object count
-aws s3 ls s3://codetot-backups-prod/backups/masanconsumer/uploads/ --recursive | wc -l
-find /home/ubuntu/webapps/masanconsumer/public/wp-content/uploads -type f | wc -l
+aws s3 ls s3://your-backups-prod/backups/acmeshop/uploads/ --recursive | wc -l
+find /home/ubuntu/webapps/acmeshop/public/wp-content/uploads -type f | wc -l
 # Numbers should be very close (S3 may have a few extra from file deletions
 # preserved by versioning).
 
 # Local backups directory
-ls -lah /home/ubuntu/webapps/masanconsumer/backups/
+ls -lah /home/ubuntu/webapps/acmeshop/backups/
 
 # Last cron log lines
-tail -50 /home/ubuntu/webapps/masanconsumer/logs/backup.log
+tail -50 /home/ubuntu/webapps/acmeshop/logs/backup.log
 ```
 
 ### F.2 CloudWatch alarm — alert on missing backups
@@ -324,7 +324,7 @@ Quick alternative without Lambda — a daily cron on EC2 itself:
 
 ```bash
 # Add to ubuntu's crontab — alerts if no DB backup in last 8 days
-0 4 * * * /usr/local/bin/backup-age-check --site=masanconsumer --bucket=codetot-backups-prod --max-age-days=8 || echo "STALE BACKUP" | mail -s "Backup alert: masanconsumer" ops@codetot.com
+0 4 * * * /usr/local/bin/backup-age-check --site=acmeshop --bucket=your-backups-prod --max-age-days=8 || echo "STALE BACKUP" | mail -s "Backup alert: acmeshop" ops@example.com
 ```
 
 (That `backup-age-check` helper isn't in this drop — let me know if you want it.)
@@ -338,17 +338,17 @@ This is the part most teams never test. Test it. At least once. Ideally to a sta
 ### G.1 Restore database
 
 ```bash
-# As ubuntu, on the target EC2 (could be sg3.codetot.org for staging restore)
+# As ubuntu, on the target EC2 (could be staging.example.com for staging restore)
 
 # 1. List available DB backups
-aws s3 ls s3://codetot-backups-prod/backups/masanconsumer/db/ | sort
+aws s3 ls s3://your-backups-prod/backups/acmeshop/db/ | sort
 
 # 2. Pick the dump you want and download it
-aws s3 cp s3://codetot-backups-prod/backups/masanconsumer/db/db-2026-05-04T19-00-00Z.sql.gz \
+aws s3 cp s3://your-backups-prod/backups/acmeshop/db/db-2026-05-04T19-00-00Z.sql.gz \
     /tmp/restore.sql.gz
 
 # 3. Restore (DESTRUCTIVE — drops existing tables via --add-drop-table in dump)
-cd /home/ubuntu/webapps/masanconsumer/public
+cd /home/ubuntu/webapps/acmeshop/public
 gunzip -c /tmp/restore.sql.gz | wp db import -
 
 # 4. Flush caches
@@ -363,11 +363,11 @@ rm /tmp/restore.sql.gz
 
 ```bash
 # Pull S3 → local. Uses sync, so re-running is safe and incremental.
-aws s3 sync s3://codetot-backups-prod/backups/masanconsumer/uploads/ \
-            /home/ubuntu/webapps/masanconsumer/public/wp-content/uploads/
+aws s3 sync s3://your-backups-prod/backups/acmeshop/uploads/ \
+            /home/ubuntu/webapps/acmeshop/public/wp-content/uploads/
 
 # Re-apply permissions
-sudo fix-permission-site --site=masanconsumer
+sudo fix-permission-site --site=acmeshop
 ```
 
 ### G.3 Restore a specific deleted file from S3 versioning
@@ -377,13 +377,13 @@ If someone accidentally deleted an uploaded file and the latest sync already pro
 ```bash
 # List versions of the lost file
 aws s3api list-object-versions \
-    --bucket codetot-backups-prod \
-    --prefix backups/masanconsumer/uploads/2024/03/important-photo.jpg
+    --bucket your-backups-prod \
+    --prefix backups/acmeshop/uploads/2024/03/important-photo.jpg
 
 # Download a specific version by VersionId
 aws s3api get-object \
-    --bucket codetot-backups-prod \
-    --key backups/masanconsumer/uploads/2024/03/important-photo.jpg \
+    --bucket your-backups-prod \
+    --key backups/acmeshop/uploads/2024/03/important-photo.jpg \
     --version-id <VERSION_ID> \
     /tmp/important-photo.jpg
 ```

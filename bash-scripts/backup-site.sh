@@ -59,13 +59,13 @@ Optional:
 Examples:
 
   # Standard weekly backup
-  /usr/local/bin/backup-site --site=masanconsumer --bucket=codetot-backups
+  /usr/local/bin/backup-site --site=acmeshop --bucket=your-backups
 
   # DB only (e.g. mid-week incremental DB safety net)
-  /usr/local/bin/backup-site --site=masanconsumer --bucket=codetot-backups --skip-uploads
+  /usr/local/bin/backup-site --site=acmeshop --bucket=your-backups --skip-uploads
 
   # One-off ad-hoc backup before a risky deployment
-  /usr/local/bin/backup-site --site=masanconsumer --bucket=codetot-backups \\
+  /usr/local/bin/backup-site --site=acmeshop --bucket=your-backups \\
                              --prefix=adhoc/pre-deploy-2026-05-07
 EOF
 }

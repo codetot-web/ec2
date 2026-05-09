@@ -57,7 +57,7 @@ Required:
   --site=NAME              Site identifier — used for path, vhost name, FPM pool,
                            DB name AND DB user (these are intentionally identical).
                            Allowed chars: a-z 0-9 _ -    Max length: 32
-  --domain=DOMAIN          Primary domain (e.g. masanconsumer.com)
+  --domain=DOMAIN          Primary domain (e.g. acmeshop.example.com)
 
 Optional layout / Apache:
   --alias=LIST             Comma-separated ServerAlias domains
@@ -91,12 +91,12 @@ Examples:
 
   # Full setup with Git repo + RDS
   sudo RDS_MASTER_PASS='masterPass' bash $(basename "$0") \\
-       --site=masanconsumer --domain=masanconsumer.com \\
-       --git-repo=git@github.com-masanconsumer:codetot-clients/masanconsumer.git \\
+       --site=acmeshop --domain=acmeshop.example.com \\
+       --git-repo=git@github.com-acmeshop:your-org-clients/acmeshop.git \\
        --rds-host=mydb.abc123.ap-southeast-1.rds.amazonaws.com
 
   # Empty site (no repo, no DB) — just scaffold dirs/vhost/pool
-  sudo bash $(basename "$0") --site=staging --domain=staging.codetot.com
+  sudo bash $(basename "$0") --site=staging --domain=staging.example.com
 
   # Custom PHP tuning for a heavier site
   sudo RDS_MASTER_PASS='masterPass' bash $(basename "$0") \\
@@ -439,7 +439,7 @@ step_reload_services() {
 
 step_fix_permissions() {
     log "Fixing permissions"
-    # Prefer the short ct-fix-perm name (post install-codetot-tools.sh),
+    # Prefer the short ct-fix-perm name (post install-tools.sh),
     # fall back to the legacy fix-permission-site name for older installs.
     if command -v ct-fix-perm >/dev/null 2>&1; then
         ct-fix-perm --site="$SITE"

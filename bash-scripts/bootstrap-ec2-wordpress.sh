@@ -302,7 +302,7 @@ step_summary() {
         warn "  Reboot when convenient: sudo reboot"
     fi
     echo ""
-    echo "Next steps for each site (e.g. masanconsumer):"
+    echo "Next steps for each site (e.g. acmeshop):"
     echo "  1. mkdir -p $WEBAPPS_DIR/<site>/{public,logs,backups,tmp}"
     echo "  2. Clone repo into <site>/public/"
     echo "  3. Write Apache vhost  → /etc/apache2/sites-available/<site>.conf"

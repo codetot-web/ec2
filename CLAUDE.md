@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Bash scripts and documentation for migrating WordPress sites from BlueHost shared hosting to a single multi-site AWS EC2 host (Ubuntu 24.04, Apache + PHP-FPM, RDS MySQL, ALB, CloudFlare, S3 backups).
 
-Not a git repo. Scripts here are authored locally and intended to be published to `github.com/codetot-web/runcloud-bash-scripts`, then installed on EC2 hosts as `ct-`-prefixed commands in `/usr/local/bin/` via `install-codetot-tools.sh`.
+Not a git repo. Scripts here are authored locally and intended to be published to `github.com/your-org/runcloud-bash-scripts`, then installed on EC2 hosts as `ct-`-prefixed commands in `/usr/local/bin/` via `install-tools.sh`.
 
 `PROJECT-BRIEF.md` is the canonical context document — read it before making non-trivial changes. `bash-scripts/BACKUP-SETUP.md` is the operational runbook for the S3 backup pipeline.
 
@@ -21,7 +21,7 @@ bash-scripts/
   BACKUP-SETUP.md             # Backup operational runbook
 ```
 
-The brief references additional scripts (`install-php-version.sh`, `fix-permission-site.sh`, `install-codetot-tools.sh`) and a `migration-checklist-bluehost-to-aws.md` that **do not exist in this directory yet**. If a task requires them, confirm with the user before assuming their content.
+The brief references additional scripts (`install-php-version.sh`, `fix-permission-site.sh`, `install-tools.sh`) and a `migration-checklist-bluehost-to-aws.md` that **do not exist in this directory yet**. If a task requires them, confirm with the user before assuming their content.
 
 ## Architecture, in one paragraph
 
@@ -48,7 +48,7 @@ These are settled. If the user seems to be revisiting one, surface the existing 
 - `chmod 777` anywhere (the setgid + group-writable strategy already gives both users access).
 - Running `wp-cli` as root or `sudo wp` — always `sudo -u ubuntu wp ...`.
 - Putting the RDS CA bundle anywhere under `/home/ubuntu/` — `www-data` may not be able to read it.
-- Rsync of code between EC2 ↔ staging (sg3.codetot.org). Code goes through Git only. Rsync is for content/uploads/DB dumps.
+- Rsync of code between EC2 ↔ staging (staging.example.com). Code goes through Git only. Rsync is for content/uploads/DB dumps.
 - `ufw --force reset` mid-session over SSH — the bootstrap script orders `ufw allow 22` *before* `ufw default deny` for a reason.
 
 ## Working with the bash scripts
@@ -72,16 +72,16 @@ There are no automated tests in this repo. Real validation happens on a live EC2
 
 | Task | Command |
 |---|---|
-| Install toolchain on a fresh EC2 | `curl -fsSL https://raw.githubusercontent.com/codetot-web/runcloud-bash-scripts/main/install-codetot-tools.sh \| sudo bash` |
+| Install toolchain on a fresh EC2 | `curl -fsSL https://raw.githubusercontent.com/your-org/runcloud-bash-scripts/main/install-tools.sh \| sudo bash` |
 | Provision EC2 base | `sudo ct-bootstrap` |
 | Create a site | `sudo RDS_MASTER_PASS='xxx' ct-create-site --site=NAME --domain=DOMAIN --git-repo=URL --rds-host=ENDPOINT` |
 | Re-apply permissions after git pull | `sudo ct-fix-perm --site=NAME` |
-| Manual backup | `ct-backup --site=NAME --bucket=codetot-backups-prod` |
+| Manual backup | `ct-backup --site=NAME --bucket=your-backups-prod` |
 | Verify DB SSL is active | `sudo -u ubuntu wp db cli -e "SHOW STATUS LIKE 'Ssl_cipher';"` (non-empty = good) |
 
 ## Doc/script naming inconsistencies to fix when convenient
 
 The brief flags these as known cleanups (documentation only — won't break anything):
-- `bootstrap-ec2-wordpress.sh` still has a `FIX_PERM_URL` env-var step (now redundant — `install-codetot-tools.sh` handles it). Drop.
+- `bootstrap-ec2-wordpress.sh` still has a `FIX_PERM_URL` env-var step (now redundant — `install-tools.sh` handles it). Drop.
 - References to `fix-permission-site` and `backup-site` long names should become `ct-fix-perm` and `ct-backup` (matches installed names).
 - `BACKUP-SETUP.md` Phase G.2 says `sudo fix-permission-site` — should be `sudo ct-fix-perm`.

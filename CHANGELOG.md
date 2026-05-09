@@ -5,11 +5,40 @@ All notable changes to this repo are tracked here. Format follows
 follows [SemVer](https://semver.org/) for the bash toolchain (the
 `PROJECT-BRIEF.md` and runbooks are versioned alongside the scripts).
 
+## [0.2.0] — 2026-05-09
+
+Public-release prep. No script behavior changes — purely a sweep of
+business-sensitive identifiers across docs, runbooks, and example
+strings inside the bash scripts.
+
+### Changed
+
+- Replaced client-specific names with generic placeholders throughout
+  the project (e.g. `acmeshop` / `acmeshop.example.com` for the example
+  site).
+- Replaced internal hostnames with generic placeholders
+  (`validator.example.com`, `staging.example.com`).
+- Replaced organisation-specific GitHub orgs and S3 bucket names with
+  `your-org` / `your-backups*` placeholders.
+- Renamed the (referenced-but-not-yet-committed) tools-installer
+  script and the IAM policy to vendor-neutral names: `install-tools.sh`
+  and `WPBackupS3Access`.
+- Generalised the contact-points table in `PROJECT-BRIEF.md` (named
+  individuals removed).
+
+### Notes for adopters
+
+- The `ct-` command prefix is intentionally kept — it's just a short
+  tag for the installed-on-EC2 helper commands, not branding. Rename
+  to whatever fits your team if you fork.
+- Any reader copy-pasting commands needs to substitute their own GitHub
+  org, S3 bucket, and domains where the placeholders appear.
+
 ## [0.1.0] — 2026-05-09
 
 Inaugural tagged release. Captures the initial workspace import plus the
 first round of bootstrap script hotfixes validated against
-`sg10.codetot.org`.
+`validator.example.com`.
 
 ### Added
 
@@ -24,7 +53,7 @@ first round of bootstrap script hotfixes validated against
   this work (architecture, locked-in decisions, anti-patterns).
 - `CLAUDE.md` — guidance for Claude Code sessions in this repo.
 - `plans/bootstrap-validation.md` — step-by-step validation log against
-  `sg10.codetot.org` for issue #1.
+  `validator.example.com` for issue #1.
 
 ### Fixed
 
@@ -43,4 +72,5 @@ validation host:
 - `step_summary` (#6): warn loudly with the pending package list when
   `/var/run/reboot-required` exists after `apt full-upgrade`.
 
-[0.1.0]: https://github.com/codetot-workspace/ec2/releases/tag/v0.1.0
+[0.2.0]: https://github.com/your-org/ec2/releases/tag/v0.2.0
+[0.1.0]: https://github.com/your-org/ec2/releases/tag/v0.1.0

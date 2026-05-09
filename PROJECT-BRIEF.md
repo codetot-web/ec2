@@ -8,7 +8,7 @@
 
 A multi-site WordPress hosting setup on AWS where each site is migrated from BlueHost shared hosting to a single EC2 instance backed by RDS MySQL, fronted by an ALB and CloudFlare, with code managed in Git and backups going to S3.
 
-**First migration target:** `masanconsumer` (`masanconsumer.com`), repo `github.com/codetot-clients/masanconsumer`.
+**First migration target:** `acmeshop` (`acmeshop.example.com`), repo `github.com/your-org-clients/acmeshop`.
 
 Future sites land on the same EC2, each isolated by per-site Apache vhost + PHP-FPM pool, with one RDS database per site (database name and user are intentionally identical).
 
@@ -24,7 +24,7 @@ End user → CloudFlare (proxy, WAF, edge cache)
 
 EC2 outbound:
   → S3 (backups, instance-role auth)
-  → sg3.codetot.org (RunCloud staging VPS, rsync mirror)
+  → staging.example.com (RunCloud staging VPS, rsync mirror)
   → GitHub (deploy keys per repo)
 ```
 
@@ -57,7 +57,7 @@ Apache vhost per site at `/etc/apache2/sites-available/<site>.conf`, PHP-FPM poo
 
 **CloudFlare proxies the ALB.** Real client IP comes through `HTTP_CF_CONNECTING_IP` and is mapped to `REMOTE_ADDR` in wp-config so plugins, security tools, and access logs see the actual visitor. CloudFlare-IP-only firewall on the ALB security group prevents bypass.
 
-**Git is the code distribution channel.** Each client gets a private repo at `github.com/codetot-clients/<client>` containing the entire WordPress tree minus uploads/caches/secrets. Deploy via `git clone` then `git pull`. WP-Admin plugin/theme installs **bypass Git** — pick `DISALLOW_FILE_MODS=true` (locked, dev-controlled) or capture-back-to-Git policy per site.
+**Git is the code distribution channel.** Each client gets a private repo at `github.com/your-org-clients/<client>` containing the entire WordPress tree minus uploads/caches/secrets. Deploy via `git clone` then `git pull`. WP-Admin plugin/theme installs **bypass Git** — pick `DISALLOW_FILE_MODS=true` (locked, dev-controlled) or capture-back-to-Git policy per site.
 
 **WP-CLI for all DB operations.** `wp db export` / `wp db import` on both ends. Don't use `mysqldump` directly.
 
@@ -77,7 +77,7 @@ Apache vhost per site at `/etc/apache2/sites-available/<site>.conf`, PHP-FPM poo
 
 ## Toolchain — five bash scripts
 
-All scripts live at `github.com/codetot-web/runcloud-bash-scripts` (or whichever fork the team standardizes on) and install to `/usr/local/bin/` with a `ct-` prefix via `install-codetot-tools.sh`.
+All scripts live at `github.com/your-org/runcloud-bash-scripts` (or whichever fork the team standardizes on) and install to `/usr/local/bin/` with a `ct-` prefix via `install-tools.sh`.
 
 | Command | Source file | Purpose | Runs as | Frequency |
 |---|---|---|---|---|
@@ -90,7 +90,7 @@ All scripts live at `github.com/codetot-web/runcloud-bash-scripts` (or whichever
 The installer:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/codetot-web/runcloud-bash-scripts/main/install-codetot-tools.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/your-org/runcloud-bash-scripts/main/install-tools.sh | sudo bash
 ```
 
 Idempotent — re-running fetches the latest version of every script.
@@ -101,9 +101,9 @@ Idempotent — re-running fetches the latest version of every script.
 
 ```bash
 sudo RDS_MASTER_PASS='xxx' ct-create-site \
-    --site=masanconsumer \
-    --domain=masanconsumer.com \
-    --git-repo=git@github.com-masanconsumer:codetot-clients/masanconsumer.git \
+    --site=acmeshop \
+    --domain=acmeshop.example.com \
+    --git-repo=git@github.com-acmeshop:your-org-clients/acmeshop.git \
     --rds-host=<rds-endpoint> \
     --php-version=8.3 \
     --memory-limit=512M --upload-max=64M --max-children=20
@@ -114,18 +114,18 @@ Master DB pass is read from env (so it's not in shell history); app DB pass is a
 **`ct-backup`** — needs the bucket pre-created with lifecycle policy (see `BACKUP-SETUP.md`):
 
 ```bash
-ct-backup --site=masanconsumer --bucket=codetot-backups-prod
+ct-backup --site=acmeshop --bucket=your-backups-prod
 ```
 
 Cron line for weekly Sunday 02:00 (in ubuntu's crontab):
 
 ```cron
-0 2 * * 0 /usr/local/bin/ct-backup --site=masanconsumer --bucket=codetot-backups-prod >> /home/ubuntu/webapps/masanconsumer/logs/backup.log 2>&1
+0 2 * * 0 /usr/local/bin/ct-backup --site=acmeshop --bucket=your-backups-prod >> /home/ubuntu/webapps/acmeshop/logs/backup.log 2>&1
 ```
 
 ---
 
-## Migration workflow — masanconsumer
+## Migration workflow — acmeshop
 
 The full phased checklist is in `migration-checklist-bluehost-to-aws.md`. Summary of the 14 phases:
 
@@ -137,7 +137,7 @@ The full phased checklist is in `migration-checklist-bluehost-to-aws.md`. Summar
 6. **Git repo setup** — `.gitignore` for full WP project, `wp-config.sample.php` committed, real `wp-config.php` server-only, deploy keys per repo.
 7. **Export from BlueHost** — `wp db export`, tar of uploads, transfer via Bitvise SFTP.
 8. **Import to EC2** — `wp db import`, search-replace URLs, restore uploads tarball, set up cron for `wp cron event run`.
-9. **Staging cross-access (sg3.codetot.org)** — SSH key from EC2 → sg3, rsync patterns for content sync, Git for code (never rsync code).
+9. **Staging cross-access (staging.example.com)** — SSH key from EC2 → sg3, rsync patterns for content sync, Git for code (never rsync code).
 10. **CloudFlare config** — DNS, Full (Strict), WAF, cache rules, origin SG locked to CF IPs.
 11. **SSL coordination** — track ACM + CF cert work with the external team.
 12. **DNS cutover** — TTL down 48h before, hosts-file test, final delta DB sync, switch CF DNS, smoke-test, enable HSTS at T+24h.
@@ -148,7 +148,7 @@ The full phased checklist is in `migration-checklist-bluehost-to-aws.md`. Summar
 
 ## Files in this project
 
-All in `/mnt/user-data/outputs/` from the conversation. They should be checked into a Git repo (most naturally `github.com/codetot-web/runcloud-bash-scripts` since that's where the install URL points).
+All in `/mnt/user-data/outputs/` from the conversation. They should be checked into a Git repo (most naturally `github.com/your-org/runcloud-bash-scripts` since that's where the install URL points).
 
 | File | What | Pushed to repo? |
 |---|---|---|
@@ -157,8 +157,8 @@ All in `/mnt/user-data/outputs/` from the conversation. They should be checked i
 | `create-site.sh` | Per-site scaffolding | Required at install URL |
 | `fix-permission-site.sh` | Permission refresh | Required at install URL |
 | `backup-site.sh` | DB + uploads backup to S3 | Required at install URL |
-| `install-codetot-tools.sh` | Bootstrap installer for the five above | Required at install URL |
-| `migration-checklist-bluehost-to-aws.md` | 14-phase playbook for masanconsumer | Should live in masanconsumer client repo or `docs/` of scripts repo |
+| `install-tools.sh` | Bootstrap installer for the five above | Required at install URL |
+| `migration-checklist-bluehost-to-aws.md` | 14-phase playbook for acmeshop | Should live in acmeshop client repo or `docs/` of scripts repo |
 | `BACKUP-SETUP.md` | S3 bucket + IAM + cron + restore docs | Should live in `docs/` of scripts repo |
 | `PROJECT-BRIEF.md` (this file) | Consolidated context for agents | Should live in `docs/` of scripts repo |
 
@@ -171,7 +171,7 @@ Reading order for a fresh agent: this file → `migration-checklist-bluehost-to-
 ```bash
 # 1. Clean Ubuntu 24.04 EC2, accessed via Bitvise SSH as ubuntu
 # 2. Install the toolchain
-curl -fsSL https://raw.githubusercontent.com/codetot-web/runcloud-bash-scripts/main/install-codetot-tools.sh | sudo bash
+curl -fsSL https://raw.githubusercontent.com/your-org/runcloud-bash-scripts/main/install-tools.sh | sudo bash
 
 # 3. Provision the box (Apache + PHP 8.3 + RDS CA + users + firewall)
 sudo ct-bootstrap
@@ -181,25 +181,25 @@ sudo ct-install-php 7.4
 
 # 5. Create the site (DB + vhost + pool + wp-config + clone)
 sudo RDS_MASTER_PASS='xxx' ct-create-site \
-    --site=masanconsumer \
-    --domain=masanconsumer.com \
-    --git-repo=git@github.com-masanconsumer:codetot-clients/masanconsumer.git \
+    --site=acmeshop \
+    --domain=acmeshop.example.com \
+    --git-repo=git@github.com-acmeshop:your-org-clients/acmeshop.git \
     --rds-host=<rds-endpoint>
 
 # 6. Import existing DB + uploads from BlueHost (via Bitvise SFTP staging)
-cd /home/ubuntu/webapps/masanconsumer/public
-gunzip -c /home/ubuntu/webapps/masanconsumer/backups/blu*.sql.gz | sudo -u ubuntu wp db import -
-sudo -u ubuntu wp search-replace 'http://masanconsumer.com' 'https://masanconsumer.com' --all-tables --skip-columns=guid
+cd /home/ubuntu/webapps/acmeshop/public
+gunzip -c /home/ubuntu/webapps/acmeshop/backups/blu*.sql.gz | sudo -u ubuntu wp db import -
+sudo -u ubuntu wp search-replace 'http://acmeshop.example.com' 'https://acmeshop.example.com' --all-tables --skip-columns=guid
 
 cd wp-content && rm -rf uploads && tar -xzf ../../../backups/uploads*.tar.gz
-sudo ct-fix-perm --site=masanconsumer
+sudo ct-fix-perm --site=acmeshop
 
 # 7. Set up backups (after S3 bucket + IAM are ready — see BACKUP-SETUP.md)
 crontab -e   # as ubuntu
-# 0 2 * * 0 /usr/local/bin/ct-backup --site=masanconsumer --bucket=codetot-backups-prod >> /home/ubuntu/webapps/masanconsumer/logs/backup.log 2>&1
+# 0 2 * * 0 /usr/local/bin/ct-backup --site=acmeshop --bucket=your-backups-prod >> /home/ubuntu/webapps/acmeshop/logs/backup.log 2>&1
 
 # 8. Verify
-curl -I https://masanconsumer.com/                                    # 200 OK after DNS cutover
+curl -I https://acmeshop.example.com/                                    # 200 OK after DNS cutover
 sudo -u ubuntu wp db cli -e "SHOW STATUS LIKE 'Ssl_cipher';"          # non-empty = SSL active
 ```
 
@@ -215,7 +215,7 @@ sudo -u ubuntu wp db cli -e "SHOW STATUS LIKE 'Ssl_cipher';"          # non-empt
 | Tail Apache errors | `tail -f /home/ubuntu/webapps/<site>/logs/error.log` |
 | Test Apache config | `sudo apachectl configtest` |
 | Restart PHP pool | `sudo systemctl reload php8.3-fpm` |
-| Push prod → staging | See Phase 9 in migration checklist (rsync to sg3.codetot.org) |
+| Push prod → staging | See Phase 9 in migration checklist (rsync to staging.example.com) |
 | Verify DB SSL | `sudo -u ubuntu wp db cli -e "SHOW STATUS LIKE 'Ssl_cipher';"` |
 | List installed PHP versions | `sudo ct-install-php` (no args) |
 
@@ -223,9 +223,9 @@ sudo -u ubuntu wp db cli -e "SHOW STATUS LIKE 'Ssl_cipher';"          # non-empt
 
 ## Open decisions *(things the agent should ask before assuming)*
 
-**`DISALLOW_FILE_MODS` policy for masanconsumer.** Locked (dev-only updates via Git pull) or open (allow WP-Admin installs, capture back to Git periodically)? Default in `create-site.sh` is currently *off* — it's commented in the generated wp-config. Pick one and uncomment.
+**`DISALLOW_FILE_MODS` policy for acmeshop.** Locked (dev-only updates via Git pull) or open (allow WP-Admin installs, capture back to Git periodically)? Default in `create-site.sh` is currently *off* — it's commented in the generated wp-config. Pick one and uncomment.
 
-**Email migration path.** If `masanconsumer.com` MX currently points at BlueHost, email migration is a separate workstream (Workspace, M365, Zoho, or SES inbound). Must complete before DNS cutover or business email goes dark.
+**Email migration path.** If `acmeshop.example.com` MX currently points at BlueHost, email migration is a separate workstream (Workspace, M365, Zoho, or SES inbound). Must complete before DNS cutover or business email goes dark.
 
 **WP admin user audit.** BlueHost-era admin accounts often include a default `admin` user, weak passwords, and ex-employees. Audit `wp user list --role=administrator` post-migration; force password resets; enable 2FA.
 
@@ -237,9 +237,9 @@ sudo -u ubuntu wp db cli -e "SHOW STATUS LIKE 'Ssl_cipher';"          # non-empt
 
 ## Known small cleanups *(safe to do anytime)*
 
-- `bootstrap-ec2-wordpress.sh` still has a `FIX_PERM_URL` env-var step for installing the permission script independently. Now redundant since `install-codetot-tools.sh` handles it. Drop the step.
+- `bootstrap-ec2-wordpress.sh` still has a `FIX_PERM_URL` env-var step for installing the permission script independently. Now redundant since `install-tools.sh` handles it. Drop the step.
 - `migration-checklist-bluehost-to-aws.md` references `fix-permission-site` and `backup-site` as the long command names. Search-and-replace to `ct-fix-perm` and `ct-backup`.
-- `BACKUP-SETUP.md` Phase G.2 restore step: `sudo fix-permission-site --site=masanconsumer` should be `sudo ct-fix-perm --site=masanconsumer`.
+- `BACKUP-SETUP.md` Phase G.2 restore step: `sudo fix-permission-site --site=acmeshop` should be `sudo ct-fix-perm --site=acmeshop`.
 
 These are documentation-only — they won't break anything if not done, but they're inconsistent with the installed command names.
 
@@ -261,7 +261,7 @@ A few things came up during design that look reasonable but break the model:
 
 ## Decisions deferred *(intentionally not solving yet)*
 
-- **Per-site UNIX user model** (the litesoup approach). Better security, but every script in this toolchain assumes `ubuntu:www-data`. Migration to per-site users is a future project, not blocking masanconsumer.
+- **Per-site UNIX user model** (the litesoup approach). Better security, but every script in this toolchain assumes `ubuntu:www-data`. Migration to per-site users is a future project, not blocking acmeshop.
 - **Fleet management across multiple EC2 instances.** Currently scoped to a single EC2 hosting many sites. If a second EC2 lands, revisit.
 - **CloudWatch backup-age alarm.** Mentioned in `BACKUP-SETUP.md` Phase F.2 as a Lambda or local cron pattern. Build the helper when production traffic arrives; not blocking initial cutover.
 - **Cross-region or cross-account DR.** Single-region S3 backups for now. Cross-region is a config change to the bucket lifecycle if needed later.
@@ -272,9 +272,9 @@ A few things came up during design that look reasonable but break the model:
 
 | Workstream | Owner |
 |---|---|
-| EC2 + scripts + Apache + PHP + WP migration | Code Tốt (Kevin) |
+| EC2 + scripts + Apache + PHP + WP migration | Maintainer team |
 | ACM cert + ALB cert attachment | External SSL team |
-| CloudFlare DNS + edge config | Code Tốt |
-| RDS provisioning + parameter group | TBD (likely Code Tốt) |
-| BlueHost decommission timing | Client (masanconsumer) — keep paid until 7 days post-cutover |
+| CloudFlare DNS + edge config | Maintainer team |
+| RDS provisioning + parameter group | TBD (likely Maintainer team) |
+| BlueHost decommission timing | Client (acmeshop) — keep paid until 7 days post-cutover |
 | Email migration (if applicable) | TBD per client |

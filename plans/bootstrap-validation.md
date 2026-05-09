@@ -1,19 +1,19 @@
 # Plan — step-by-step validation of `bootstrap-ec2-wordpress.sh`
 
-Tracks issue [#1](https://github.com/codetot-workspace/ec2/issues/1). Branch: `feat/1-bootstrap-validation`.
+Tracks issue [#1](https://github.com/your-org/ec2/issues/1). Branch: `feat/1-bootstrap-validation`.
 
 ## Why
 
-`bash-scripts/bootstrap-ec2-wordpress.sh` was written for a fresh Ubuntu 24.04 EC2 AMI. The first masanconsumer cutover is the first time it will be run for real. Stepping through each `step_*` against a disposable host (`sg10.codetot.org`) lets us catch latent assumptions (PPA gaps, swap path collisions, ufw ordering, redis startup mode, `ubuntu`-user dependence) before they show up in production.
+`bash-scripts/bootstrap-ec2-wordpress.sh` was written for a fresh Ubuntu 24.04 EC2 AMI. The first acmeshop cutover is the first time it will be run for real. Stepping through each `step_*` against a disposable host (`validator.example.com`) lets us catch latent assumptions (PPA gaps, swap path collisions, ufw ordering, redis startup mode, `ubuntu`-user dependence) before they show up in production.
 
 ## Validation host
 
-`sg10.codetot.org` — fresh Ubuntu 24.04.4 LTS VPS, x86_64, 7.8 GB RAM, 99 GB disk. No web stack pre-installed (only `mysql-common`).
+`validator.example.com` — fresh Ubuntu 24.04.4 LTS VPS, x86_64, 7.8 GB RAM, 99 GB disk. No web stack pre-installed (only `mysql-common`).
 
 Local creds in repo-root `.env` (gitignored):
 
 ```
-SSH_ACCESS=ubuntu@sg10.codetot.org
+SSH_ACCESS=ubuntu@validator.example.com
 SSH_PASSWORD=<see .env>
 ```
 
@@ -32,7 +32,7 @@ chmod 0440 /etc/sudoers.d/90-ubuntu-nopasswd
 visudo -cf /etc/sudoers.d/90-ubuntu-nopasswd
 ```
 
-Verified: `id ubuntu` → uid=1000, sudo group; `sudo -n whoami` → `root`; `.env` rewritten to `ubuntu@sg10.codetot.org`.
+Verified: `id ubuntu` → uid=1000, sudo group; `sudo -n whoami` → `root`; `.env` rewritten to `ubuntu@validator.example.com`.
 
 **Known cosmetic noise:** `sudo: unable to resolve host localhost.localdomain` on every sudo call. The hostname isn't in `/etc/hosts`. Harmless but noisy — fix optionally with `echo "127.0.1.1 $(hostname)" >> /etc/hosts`.
 
@@ -63,7 +63,7 @@ sshpass -p "$SSH_PASSWORD" ssh "$SSH_ACCESS" \
 | 10 | `step_firewall` | ufw active, 22/80/443 allowed, default deny incoming | ✓ | Confirmed SSH port = 22 before enabling. |
 | 11 | `step_fail2ban` | `systemctl is-active fail2ban` = active | ✓ | sshd jail loaded. |
 | 12 | `step_redis` | `redis-cli ping` = PONG | ✓ | |
-| 13 | `step_fix_perm_script` | Skipped (FIX_PERM_URL unset) | ✓ (skipped as designed) | Step slated for removal — `install-codetot-tools.sh` will replace it. Tracked in PROJECT-BRIEF cleanup list. |
+| 13 | `step_fix_perm_script` | Skipped (FIX_PERM_URL unset) | ✓ (skipped as designed) | Step slated for removal — `install-tools.sh` will replace it. Tracked in PROJECT-BRIEF cleanup list. |
 | 14 | `step_summary` | All values populated | ✓ | **Finding:** swap row uses `swapon --show --noheadings \| head -1`, which only prints `/dev/vdb` (the first one), hiding the script's own `/swapfile`. Cosmetic. |
 
 ### Idempotency re-run — ✓
@@ -79,7 +79,7 @@ Re-running `sudo bash /tmp/bootstrap-ec2-wordpress.sh` end-to-end produced no de
 
 ### Findings to consider patching
 
-Severity: all minor. None block the masanconsumer cutover.
+Severity: all minor. None block the acmeshop cutover.
 
 1. **Pre-existing swap partition not detected.** `step_swap` checks for `/swapfile` only. On hosts with a vendor-provisioned swap partition (e.g. this VPS's `/dev/vdb`), we end up with two swaps. EC2 AMIs don't ship swap, so this won't bite there — but the script could be friendlier with a generic `swapon --show \| grep -q .` guard.
 2. **`step_install_wp_cli` re-downloads on every run.** Wastes ~7 MB and a few seconds. Easy guard: skip download if `wp --info` already reports a version.
